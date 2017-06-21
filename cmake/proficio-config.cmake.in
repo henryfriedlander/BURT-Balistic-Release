@@ -1,0 +1,4 @@
+set(PROFICIO_INCLUDE_DIRS @exported_include_dirs@)
+set(PROFICIO_LIBRARY_DIRS @exported_link_dirs@)
+set(PROFICIO_DEFINITIONS @exported_definitions@)
+set(PROFICIO_LIBRARIES @exported_libraries@)

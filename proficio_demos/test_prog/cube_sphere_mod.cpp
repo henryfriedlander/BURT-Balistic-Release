@@ -131,11 +131,9 @@ int proficio_main(int argc, char** argv,
   // Instantiate Systems
   NetworkHaptics<DOF> network_haptics(product_manager.getExecutionManager(),
                                       remoteHost, &gravity_comp);
-  const cp_type cylinder_center(0.4, -0.15, 0.0);
-  const double face_pt1 = 0.12;
-  const double face_pt2 = 0.30;
-  proficio::systems::haptictoolbox::CylindricalAssist cylinder(cylinder_center, face_pt1, face_pt2);
-  cylinder.SetRadius(0);
+  const cp_type ball_center(0.4, -0.15, 0.0);
+  const double radius = 0.02;
+  barrett::systems::HapticBall ball(ball_center, radius);
   const cp_type box_center(0.35, 0.2, 0.0);
   const barrett::math::Vector<3>::type box_size(0.2, 0.2, 0.2);
   barrett::systems::HapticBox box(box_center, box_size);
@@ -188,7 +186,7 @@ int proficio_main(int argc, char** argv,
 
   barrett::systems::connect(wam.toolPosition.output, mod_axes.input);
   barrett::systems::connect(mod_axes.output, network_haptics.input);
-  barrett::systems::connect(mod_axes.output, cylinder.input);
+  barrett::systems::connect(mod_axes.output, ball.input);
   barrett::systems::connect(mod_axes.output, box.input);
 
   barrett::systems::connect(mult.output, mod_force.input);
@@ -197,8 +195,8 @@ int proficio_main(int argc, char** argv,
   // This summing only works because it's not possible to be in contact with 
   // both haptic objects at the same time, so only one of the inputs to each 
   // summer will be non-zero
-  barrett::systems::connect(cylinder.directionOutput, direction_sum.getInput(0));
-  barrett::systems::connect(cylinder.depthOutput, depth_sum.getInput(0));
+  barrett::systems::connect(ball.directionOutput, direction_sum.getInput(0));
+  barrett::systems::connect(ball.depthOutput, depth_sum.getInput(0));
   barrett::systems::connect(box.directionOutput, direction_sum.getInput(1));
   barrett::systems::connect(box.depthOutput, depth_sum.getInput(1));
 
@@ -222,10 +220,12 @@ int proficio_main(int argc, char** argv,
   barrett::systems::connect(joint_torque_saturation.output, wam.input);
 
   while (true) {  // Allow the user to stop and resume with pendant buttons
+  /*
 #ifndef NO_CONTROL_PENDANT
     product_manager.getSafetyModule()->waitForMode(
         barrett::SafetyModule::IDLE);  // block until the user Shift-idles
 #endif
+*/
     if (game_exit) {
       product_manager.getPuck(1)
           ->setProperty(product_manager.getPuck(1)->getBus(), 1, 8, 3);

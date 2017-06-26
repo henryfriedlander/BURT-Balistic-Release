@@ -4,6 +4,8 @@
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o
  /home/robot/proficio_toolbox/proficio_demos/cube_sphere/cube_sphere.cpp
  /home/robot/proficio_toolbox/proficio_demos/cube_sphere/cube_sphere.h
+ /home/robot/proficio_toolbox/proficio_demos/cube_sphere/haptic_line.h
+ /home/robot/proficio_toolbox/proficio_demos/cube_sphere/normalize.h
  /usr/include/eigen3/Eigen/Cholesky
  /usr/include/eigen3/Eigen/Core
  /usr/include/eigen3/Eigen/Eigen2Support
@@ -303,12 +305,6 @@ CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o
  /usr/local/include/libconfig.h
  /usr/local/include/libconfig.h++
  /usr/local/include/proficio/standard_proficio_main.h
- /usr/local/include/proficio/systems/haptics.h
- /usr/local/include/proficio/systems/haptics/abstract/haptic_object.h
- /usr/local/include/proficio/systems/haptics/cylindrical_assist.h
- /usr/local/include/proficio/systems/haptics/haptic_floor.h
- /usr/local/include/proficio/systems/haptics/haptic_sphere.h
- /usr/local/include/proficio/systems/haptics/shrinking_sphere.h
  /usr/local/include/proficio/systems/utilities.h
  /usr/local/include/proficio/systems/utilities/haptic_floor.h
  /usr/local/include/proficio/systems/utilities/joint_torque_saturation.h

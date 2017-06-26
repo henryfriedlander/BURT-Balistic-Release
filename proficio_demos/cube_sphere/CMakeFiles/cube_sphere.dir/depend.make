@@ -3,6 +3,8 @@
 
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: cube_sphere.cpp
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: cube_sphere.h
+CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: haptic_line.h
+CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: normalize.h
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/include/eigen3/Eigen/Cholesky
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/include/eigen3/Eigen/Core
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/include/eigen3/Eigen/Eigen2Support
@@ -302,12 +304,6 @@ CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/barrett/units.h
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/libconfig.h
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/libconfig.h++
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/standard_proficio_main.h
-CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/haptics.h
-CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/haptics/abstract/haptic_object.h
-CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/haptics/cylindrical_assist.h
-CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/haptics/haptic_floor.h
-CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/haptics/haptic_sphere.h
-CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/haptics/shrinking_sphere.h
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/utilities.h
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/utilities/haptic_floor.h
 CMakeFiles/cube_sphere.dir/cube_sphere.cpp.o: /usr/local/include/proficio/systems/utilities/joint_torque_saturation.h

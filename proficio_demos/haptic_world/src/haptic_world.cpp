@@ -448,7 +448,6 @@ template <size_t DOF>
 void HapticsDemo<DOF>::connectForces() {
   BARRETT_UNITS_FIXED_SIZE_TYPEDEFS;
 
-  barrett::systems::connect(wam.kinematicsBase.kinOutput, cf_tf2jt.kinInput);
   barrett::systems::connect(wam.jpOutput, user_grav_comp_->input);
   barrett::systems::connect(wam.jvOutput, jvFilter.input);
   barrett::systems::connect(jvFilter.output, velsat.input);

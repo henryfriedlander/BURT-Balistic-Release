@@ -66,17 +66,19 @@ protected:
 		pos[xyz] = 0;
 		
 		depth = pos.norm();
+		/*
 		if (depth > 0.4){
 			depth = 0.4;
-		}
+		}*/
 		//printf("depth: %6.3f\n", depth);
-		dir = pos / depth;
+		dir = pos; // / depth;
 		/*
 		 * find vector from input point to point on the line
 		 * Get distance from input to point on line with the same (wlog) x value
 		 * then get the 2d distance between the y,z of the input to the y,z of the line
 		 * 
 		 */
+		//printf("line dir: [%6.3f, %6.3f, %6.3f]\n", dir[0], dir[1], dir[2]);
 		depthOutputValue->setData(&depth);
 		directionOutputValue->setData(&dir);
 	}

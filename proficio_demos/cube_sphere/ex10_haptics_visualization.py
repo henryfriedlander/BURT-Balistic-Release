@@ -61,8 +61,8 @@ def main():
     Uses a socket to send user gravity compensation settings and receive
     robot endpoint position. """
     remote_host = get_remote_host()
-    msg_format = "d" * 4  # messages contain 3 doubles
-    msg_format_send = "d" * 5  # messages contain 4 doubles
+    msg_format = "d" * 3  # messages contain 3 doubles
+    msg_format_send = "d" * 4  # messages contain 4 doubles
     msg_size_send = struct.calcsize(msg_format_send)
     msg_size = struct.calcsize(msg_format)
     sock = make_socket(remote_host)
@@ -81,9 +81,9 @@ def main():
     f.rotate(angle=pi * 0.2, axis=(1, 0, 0), origin=(0, 0, 0))
 
     # unit vectors
-    arrow(pos = (0,0,0), axis = (1,0,0), color = color.red, frame = f)
-    arrow(pos = (0,0,0), axis = (0,1,0), color = color.green, frame = f)
-    arrow(pos = (0,0,0), axis = (0,0,1), color = color.blue, frame = f)
+    arrow(pos = (0,0,0), axis = (-0.3,0,0), color = color.red, frame = f)
+    #arrow(pos = (0,0,0), axis = (0,0.3,0), color = color.green, frame = f)
+    #arrow(pos = (0,0,0), axis = (0,0,0.3), color = color.blue, frame = f)
 
     # floor
     xMin, xMax = -1.0, 0.4
@@ -98,8 +98,8 @@ def main():
         curve(pos=[(xMin, y, z), (xMax, y, z)], frame=f)
 
     # haptic objects
-    sphere(pos=(0.4, -0.15, 0), radius=0.02, color=color.blue, opacity=0.6,
-           frame=f)
+    #sphere(pos=(0.4, -0.15, 0), radius=0.02, color=color.blue, opacity=0.6,
+    #       frame=f)
     sphere(pos=(0.4, -0.15, 0.15), radius=0.01, color=color.green, opacity=0.6,
            frame=f)
     #box(pos=(0.35, 0.2, 0), length=0.19, height=0.19, width=0.19,
@@ -110,14 +110,6 @@ def main():
 
     grav_comp = 100
     
-   ''' first is the direction where the target is (a number from 1-6)
-   * 1 is +z direction
-   * 2 is -z direction
-   * 3 is +y direction
-   * 4 is -y direction
-   * 5 is +x direction
-   * 6 is -x direction
-   '''
     posTargetPos = [(0.4, -0.15, 0.15), (0.4, -0.15, -0.15), (0.4, 0, 0), (0.4, -0.3, 0), (0.55, -0.15, 0), (0.25, -0.15, 0)]
     while True:
         if scene.kb.keys:  # If any input was pressed

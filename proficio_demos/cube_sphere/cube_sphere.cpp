@@ -49,19 +49,24 @@
  */
  
  /* TODOs
-  * Create a system inside this file for HapticLine that has an input that can handle 
-  * Create a callback for the hapticLine
-  * 	(create something similar to the HapticCalc line 128 in haptic_world)
+  * Create a callback for a function in this file that has access to the position of the target
+  * inputs are the position of the target and the position of the wam
   */ 
 
 #include "cube_sphere.h"  // NOLINT (build/include_subdir)
 #include "haptic_line.h" // NOlINT (build/include_subdir)
 #include "normalize.h" // NOlINT (build/include_subdir)
+#include "haptic_line.h" // NOlINT (build/include_subdir)
+#include "haptic_ball_proficio.h" // NOlINT (build/include_subdir)
+#include "haptic_box_proficio.h" // NOlINT (build/include_subdir)
+#include "magnitude.h" // NOlINT (build/include_subdir)
+#include "balistic_force.h" // NOlINT (build/include_subdir)
 
 #include <string>
 #include <signal.h>
-#include <fstream>
 #include <typeinfo>
+#include <iostream>
+#include <fstream>
 
 #include <boost/bind.hpp>
 #include <boost/tuple/tuple.hpp>
@@ -88,17 +93,17 @@ BARRETT_UNITS_FIXED_SIZE_TYPEDEFS;
 BARRETT_UNITS_TYPEDEFS(4);  // defines v_type to have length 4
 
 const char* remoteHost = NULL;
-double kp = 3e3;
-double kd = 3e1;
+double kpLine = 3e3;
+double kdLine = 3e1;
 bool game_exit = false;
 barrett::systems::ExposedOutput<v_type> message;
 
 bool validate_args(int argc, char** argv) {
   switch (argc) {
     case 4:
-      kd = atof(argv[3]);
+      kdLine = atof(argv[3]);
     case 3:
-      kp = atof(argv[2]);
+      kpLine = atof(argv[2]);
     case 2:
       remoteHost = argv[1];
       break;
@@ -106,7 +111,7 @@ bool validate_args(int argc, char** argv) {
       remoteHost = "127.0.0.1";
       printf("Defaulting to 127.0.0.1\n");
   }
-  printf("Gains: kp = %f; kd = %f\n", kp, kd);
+  printf("Gains: kp = %f; kd = %f\n", kpLine, kdLine);
   return true;
 }
 
@@ -119,7 +124,7 @@ void exit_program_callback(int signum) { game_exit = true; }
 cf_type scale(boost::tuple<cf_type, double> t) {
   return t.get<0>() * t.get<1>();
 }
-
+/*
 barrett::systems::ExposedOutput<v_type> append(cf_type axes) {
 	v_type msg_tmp;
 	for (int i = 0; i < 3; i++){
@@ -127,9 +132,9 @@ barrett::systems::ExposedOutput<v_type> append(cf_type axes) {
 	}
 	msg_tmp[3] = 0.0; // needs to be randomly generated and used as an index in the cpp file
 	message.setValue(msg_tmp);
-	return message.output;
+	return message;
 }
-
+*/
 template <size_t DOF>
 int proficio_main(int argc, char** argv,
                   barrett::ProductManager& product_manager,  // NOLINT
@@ -172,19 +177,43 @@ int proficio_main(int argc, char** argv,
    * 10 cm
    * 15 cm
    * 20 cm
+  */
+  std::ifstream myReadFile;
+  myReadFile.open("input.txt");
+  //int output;
+  //int lineNumber = 0;
   
-  ifstream data_input;
-  data_input.open("data_input.txt");
-  char output[100];
+  int XorYorZ=2;
+  int UpOrDown = 1; // 1 if up -1 if down
+  double forceThreshold=0.01;
+  double targetDistance = 0.10;
+  /*
   if (myReadFile.is_open()) {
-  while (!myReadFile.eof()) {
-    myReadFile >> output;
-    cout<<output;
-    }
+	for (int i=0;i<10;i++) {
+		myReadFile >> output;
+		std::cout << output << std::endl;
+		switch (lineNumber){
+			case 0:
+				XorYorZ = output;
+				break;
+			case 1:
+				UpOrDown = output;
+				break;
+			case 2:
+				forceThreshold = output;
+				break;
+			case 3:
+				targetDistance = output;
+				break;
+			default:
+				printf("error: inside default in reading file");
+				break; 
+		}
+		lineNumber++;
+	}
   }
   myReadFile.close();
   */
-  
   // Catch kill signals if possible for a graceful exit.
   signal(SIGINT, cube_sphere::exit_program_callback);
   signal(SIGTERM, cube_sphere::exit_program_callback);
@@ -210,16 +239,18 @@ int proficio_main(int argc, char** argv,
   }
   
   //const cp_type transformVector(0.85, -0.27, -0.2);
-  const cp_type ball_center(0.4, -0.15, 0.0);
-  const cp_type system_center(0.440, -0.109, 0.2);
+  const cp_type ball_center(0.4, -0.15, 0.05);
+  const cp_type system_center(0.450, -0.120, 0.250);
   wam.moveTo(system_center);
   printf("Done Moving Arm! \n");
   //const double radius = 0.02;
-  //barrett::systems::HapticBall ball(ball_center, radius);
+  //barrett::systems::HapticBallProficio ball(ball_center, radius);
   const cp_type box_center(0.35, 0.2, 0.0);
   const barrett::math::Vector<3>::type box_size(0.2, 0.2, 0.2);
-  const int XorYorZ = 1;
-  barrett::systems::HapticBox ball(ball_center, box_size);
+
+  //const double forceThreshold = 0.05;
+  //barrett::systems::HapticBoxProficio ball(ball_center, box_size);
+  barrett::systems::BalisticForce ball(ball_center, XorYorZ, forceThreshold * UpOrDown);
   barrett::systems::HapticLine line(ball_center, XorYorZ);
   
   barrett::systems::Summer<cf_type> direction_sum;
@@ -227,13 +258,15 @@ int proficio_main(int argc, char** argv,
   barrett::systems::PIDController<double, double> pid_controller;
   barrett::systems::Constant<double> zero(0.0);
   barrett::systems::TupleGrouper<cf_type, double> tuple_grouper;
+  
   barrett::systems::Callback<boost::tuple<cf_type, double>, cf_type> mult(  // NOLINT
       scale);
-  barrett::systems::Callback< cf_type, barrett::systems::ExposedOutput<v_type> > nhAppend(  // NOLINT
-      append);
+  //barrett::systems::Callback< cf_type, barrett::systems::ExposedOutput<v_type> > nhAppend(append);
   barrett::systems::ToolForceToJointTorques<DOF> tf2jt;
   barrett::systems::Summer<jt_type, 3> joint_torque_sum("+++");
-  jt_type jtLimits(35.0);
+  jt_type jtLimits(45.0);
+  jtLimits[2] = 35.0;
+  jtLimits[0] = 55.0;
   proficio::systems::JointTorqueSaturation<DOF> joint_torque_saturation(
       jtLimits);
   v_type dampingConstants(20.0);
@@ -244,13 +277,15 @@ int proficio_main(int argc, char** argv,
                                                          velocity_limits);
 
   barrett::systems::Normalize<cf_type> normalizeHelper;
+  barrett::systems::Magnitude<cf_type, double> magnitudeHelper;
+  
   jv_type joint_vel_filter_freq(20.0);
   barrett::systems::FirstOrderFilter<jv_type> joint_vel_filter;
   joint_vel_filter.setLowPass(joint_vel_filter_freq);
 
   // configure Systems
-  pid_controller.setKp(kp);
-  pid_controller.setKd(kd);
+  pid_controller.setKp(kpLine);
+  pid_controller.setKd(kdLine);
 
   // line up coordinate axis with python visualization
   barrett::systems::modXYZ<cp_type> mod_axes;
@@ -276,37 +311,29 @@ int proficio_main(int argc, char** argv,
   barrett::systems::connect(joint_vel_filter.output, velsat.input);
 
   barrett::systems::connect(wam.toolPosition.output, mod_axes.input);
-  barrett::systems::connect(mod_axes.output, nhAppend.input);
-  barrett::systems::forceConnect(nhAppend.output,  network_haptics.input);
+  barrett::systems::connect(mod_axes.output, network_haptics.input);
   barrett::systems::connect(mod_axes.output, ball.input);
   barrett::systems::connect(mod_axes.output, line.input);
 
-  barrett::systems::connect(mult.output, mod_force.input);
-  barrett::systems::connect(mod_force.output, tf2jt.input);
-
-  // This summing only works because it's not possible to be in contact with 
-  // both haptic objects at the same time, so only one of the inputs to each 
-  // summer will be non-zero
   barrett::systems::connect(ball.directionOutput, direction_sum.getInput(0));
-  barrett::systems::connect(ball.depthOutput, depth_sum.getInput(0));
   barrett::systems::connect(line.directionOutput, direction_sum.getInput(1));
-  barrett::systems::connect(line.depthOutput, depth_sum.getInput(1));
 
   barrett::systems::connect(wam.kinematicsBase.kinOutput, tf2jt.kinInput);
+  barrett::systems::connect(direction_sum.output, magnitudeHelper.input);
   barrett::systems::connect(direction_sum.output, normalizeHelper.input);
-  barrett::systems::connect(normalizeHelper.output,tuple_grouper.getInput<0>());
+  barrett::systems::connect(normalizeHelper.output, tuple_grouper.getInput<0>());
   
-  //std::cout << typeid(direction_sum.output).name() << std::endl;
-  
-  barrett::systems::connect(depth_sum.output, pid_controller.referenceInput);
+  barrett::systems::connect(magnitudeHelper.output, pid_controller.referenceInput);
   barrett::systems::connect(zero.output, pid_controller.feedbackInput);
   barrett::systems::connect(pid_controller.controlOutput, tuple_grouper.getInput<1>());
 
   barrett::systems::connect(tuple_grouper.output, mult.input);
+  barrett::systems::connect(mult.output, mod_force.input);
+  barrett::systems::connect(mod_force.output, tf2jt.input);
   barrett::systems::connect(tf2jt.output, joint_torque_sum.getInput(0));
   barrett::systems::connect(gravity_comp.output, joint_torque_sum.getInput(1));
-  barrett::systems::connect(joint_torque_sum.output, joint_torque_saturation.input);
   barrett::systems::connect(velsat.output, joint_torque_sum.getInput(2));
+  barrett::systems::connect(joint_torque_sum.output, joint_torque_saturation.input);
 
   // adjust velocity fault limit
   product_manager.getSafetyModule()->setVelocityLimit(1.5);
@@ -320,14 +347,15 @@ int proficio_main(int argc, char** argv,
   target_center[0] = 0.439;
   target_center[1] = 0.417;
   target_center[2] = 0.366;
-  double target_radius = 0.03;
+  double target_error = 0.03;
   while (true) {  // Allow the user to stop and resume with pendant buttons
 	cp = barrett::math::saturate(wam.getToolPosition(), 9.999);
     if ( counter % 100 == 0 ) {
 		printf("[%6.3f, %6.3f, %6.3f]\n", cp[0], cp[1], cp[2]);
 	}
 	counter++;
-	if ( pow((cp[0]-target_center[0]),2) + pow((cp[1]-target_center[1]),2) + pow((cp[2]-target_center[2]),2) < pow(target_radius,2)){
+	double target_pos = UpOrDown*targetDistance + system_center[XorYorZ];
+	if (target_pos - target_error < cp[XorYorZ] && cp[XorYorZ] < target_pos + target_error){
 		if (timer > 10){
 			wam.moveTo(system_center);
 			// TODO: after the wam moves back to the center hand over a different set of instructions to the python visualization
@@ -342,12 +370,12 @@ int proficio_main(int argc, char** argv,
 	}else{
 		timer = 0;
 	}
-
+/*
 #ifndef NO_CONTROL_PENDANT
     product_manager.getSafetyModule()->waitForMode(
         barrett::SafetyModule::IDLE);  // block until the user Shift-idles
 #endif
-
+*/
     if (product_manager.getSafetyModule()->getMode() == barrett::SafetyModule::IDLE) {
 		/*
 		product_manager.getPuck(1)
@@ -363,8 +391,6 @@ int proficio_main(int argc, char** argv,
     }
     barrett::btsleep(0.02);
 #ifndef NO_CONTROL_PENDANT
-    product_manager.getSafetyModule()->waitForMode(
-        barrett::SafetyModule::ACTIVE);  // block until the user Shift-activates
 #endif
   }
   return 0;

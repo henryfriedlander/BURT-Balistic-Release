@@ -58,6 +58,7 @@ public:
 protected:
 	virtual void operate() {
 		dir = this->input.getValue();
+		//printf("summed dir: [%6.3f, %6.3f, %6.3f]\n", dir[0], dir[1], dir[2]);
 		dir /= dir.norm();
 		this->outputValue->setData(&dir);
 	}

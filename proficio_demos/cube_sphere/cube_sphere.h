@@ -15,59 +15,53 @@
  *  You should have received a copy of the GNU General Public License along
  *  with this version of proficio_toolbox.  If not, see
  *  <http://www.gnu.org/licenses/>.
+ * 
+ * 
  */
 
-/** @file cube_sphere.h
- *
- *  Network haptics system
+/** @file haptic_world.cpp
  *
  *  I/O    | Description
  *  ------ | ------------
- *  input  | Cartesian position of the robot joints
+ *  input  | Cartesian velocity of the robot joints
  *  output | Cartesian force for user gravity compensation
- *
- *  @param execution_manager
- *  @param remote_host
- *  @param grav_comp
- *  @param port_src
- *  @param port_dest
- *  @param sys_name
  *
  *  NOTICE: This program is for demonstration purposes only. It is not approved
  *  for clinical use.
+ *
+ *  This program does not comply with the Barrett C++ Coding standard
  */
 
-#ifndef PROFICIO_DEMOS_CUBE_SPHERE_CUBE_SPHERE_H_
-#define PROFICIO_DEMOS_CUBE_SPHERE_CUBE_SPHERE_H_
-
-#include <arpa/inet.h>  /* For inet_pton() */
-#include <fcntl.h>      /* To change socket to nonblocking mode */
-#include <sys/socket.h> /* For sockets */
-#include <unistd.h>     /* for close() */
+#ifndef PROFICIO_DEMOS_CUBE_SPHERE_H
+#define PROFICIO_DEMOS_CUBE_SPHERE_H
 
 #include <stdexcept>
-#include <string>
 
-#include <boost/tuple/tuple.hpp>
+#include <syslog.h>
+#include <unistd.h>     // for close()
+#include <sys/socket.h> // For sockets
+#include <fcntl.h>      // To change socket to nonblocking mode
+#include <arpa/inet.h>  // For inet_pton()
 
-#include <barrett/detail/ca_macro.h>                        // NOLINT(build/include_order)
-#include <barrett/os.h>                                     // NOLINT(build/include_order)
-#include <barrett/systems/abstract/single_io.h>             // NOLINT(build/include_order)
-#include <barrett/thread/disable_secondary_mode_warning.h>  // NOLINT(build/include_order)
-#include <barrett/units.h>                                  // NOLINT(build/include_order)
+#include <barrett/detail/ca_macro.h>
+#include <barrett/os.h>                          // NOLINT(build/include_order)
+#include <barrett/systems/abstract/single_io.h>
+#include <barrett/thread/disable_secondary_mode_warning.h>
+#include <barrett/units.h>
 
-#include <proficio/systems/utilities.h>                     // NOLINT(build/include_order)
+#include <proficio/systems/utilities.h>          // NOLINT(build/include_order)
+
 
 template <size_t DOF>
 class NetworkHaptics
     : public barrett::systems::SingleIO<
-          barrett::units::CartesianPosition::type,
-          boost::tuple<double, barrett::units::CartesianForce::type> > {
-  BARRETT_UNITS_FIXED_SIZE_TYPEDEFS;
+          barrett::math::Vector<6>::type,
+          boost::tuple<double, barrett::math::Vector<6>::type> > {
+  BARRETT_UNITS_TYPEDEFS(6);
 
  public:
-  static const int SIZE_OF_MSG = 3 * sizeof(double);
-  static const int SIZE_OF_MSG_RECV = 4 * sizeof(double);
+  static const int SIZE_OF_MSG = 6 * sizeof(double);
+  static const int SIZE_OF_MSG_RECV = 5 * sizeof(double);
 
   /** Set up networking:
    *  - Create socket
@@ -77,30 +71,29 @@ class NetworkHaptics
    *  - Set up address of remote host
    *  - Call "connect" to set datagram destination
    */
-  explicit NetworkHaptics(
-      barrett::systems::ExecutionManager* execution_manager, const char* remote_host,
-      proficio::systems::UserGravityCompensation<DOF>* grav_comp,
-      int port_src = 5557, int port_dest = 5556,
-      const std::string& sys_name = "NetworkHaptics")
-      : barrett::systems::SingleIO<cp_type, boost::tuple<double, cf_type> >(
+  explicit NetworkHaptics(barrett::systems::ExecutionManager* exec_manager,
+                          const char* remote_host,
+                          proficio::systems::UserGravityCompensation<DOF>* gc,
+                          int port_src = 5557, int port_dest = 5556,
+                          const std::string& sys_name = "NetworkHaptics")
+      : barrett::systems::SingleIO<v_type, boost::tuple<double, v_type> >(
             sys_name),
         sock_(-1),
-        curr_pos_(0.0),
-        user_grav_comp(grav_comp) {
+        curr_vel_(0.0),
+        user_grav_comp_(gc) {
     int err;
-    long flags;  // NOLINT(runtime/int)
+    long flags;
     int buflen;
     unsigned int buflenlen;
     struct sockaddr_in bind_addr;
     struct sockaddr_in their_addr;
-    cf_type cf_zero;
-    cf_zero.setZero();
-    tuple_msg.get<1>() = cf_zero;
-    tuple_msg.get<0>() = 10;
+    v_type zero_v(0.0);
+    tuple_msg_.get<1>() = zero_v;
+    tuple_msg_.get<0>() = 10;
 
     /* Create socket */
     sock_ = socket(PF_INET, SOCK_DGRAM, 0);
-    if (sock_ == -1) {
+    if (sock_ == -1) { 
       ctor_error_handler("Could not create socket", __func__);
     }
 
@@ -126,10 +119,11 @@ class NetworkHaptics
         buflen;
 
     buflenlen = sizeof(buflen);
-    buflen = 5 * SIZE_OF_MSG_RECV;
-    err = setsockopt(sock_, SOL_SOCKET, SO_SNDBUF, (char*)&buflen, buflenlen);  // NOLINT
+    buflen = 11 * SIZE_OF_MSG_RECV;
+    err = setsockopt(sock_, SOL_SOCKET, SO_SNDBUF, (char*)&buflen, buflenlen);
     if (err) {
       ctor_error_handler("Could not set output buffer size.", __func__);
+
     }
 
     /* Set up the bind address */
@@ -161,14 +155,13 @@ class NetworkHaptics
     }
 
     /* Call "connect" to set datagram destination */
-    err =
-        connect(sock_, (struct sockaddr*)&their_addr, sizeof(struct sockaddr));
+    err = connect(sock_, (struct sockaddr*)&their_addr, sizeof(struct sockaddr));
     if (err) {
       ctor_error_handler("Could not set datagram destination.", __func__);
     }
 
-    if (execution_manager != NULL) {
-      execution_manager->startManaging(*this);
+    if (exec_manager != NULL) {
+      exec_manager->startManaging(*this);
     }
   }
 
@@ -176,6 +169,7 @@ class NetworkHaptics
     mandatoryCleanUp();
     close(sock_);
   }
+
 
   /** Handles basic errors in the constructor by logging them with
    *  barrett::logMessage, and throwing a runtime error
@@ -197,34 +191,34 @@ class NetworkHaptics
 
  protected:
   int sock_;
-  cp_type curr_pos_;
-  boost::tuple<double, cf_type> tuple_msg;  // NOLINT
-  proficio::systems::UserGravityCompensation<DOF>* user_grav_comp;
+  v_type curr_vel_;
+  boost::tuple<double, v_type> tuple_msg_;
+  proficio::systems::UserGravityCompensation<DOF>* user_grav_comp_;
 
-  /** Send current position. Get user gravity compensation message
+  /** Send current velocity. Get user gravity compensation message
    *  and set/increment/decrement the gain as specified
    */
   virtual void operate() {
-    curr_pos_ = input.getValue();
-    // send() and recv() cause switches to secondary mode. The socket is
-    // non-blocking, so this *probably* won't impact the control-loop
-    // timing that much...
-    barrett::thread::DisableSecondaryModeWarning dsmw;
-
-    send(sock_, curr_pos_.data(), SIZE_OF_MSG, 0);
-    recv(sock_, &tuple_msg, SIZE_OF_MSG_RECV, 0);
-    if (tuple_msg.get<0>() == 0)
-      user_grav_comp->setGainZero();
-    else if (tuple_msg.get<0>() == 1)
-      user_grav_comp->incrementGain();
-    else if (tuple_msg.get<0>() == 2)
-      user_grav_comp->decrementGain();
-
-    outputValue->setData(&tuple_msg);
+    curr_vel_ = input.getValue();
+    {
+      // send() and recv() cause switches to secondary mode. The socket is
+      // non-blocking, so this *probably* won't impact the control-loop
+      // timing that much...
+      barrett::thread::DisableSecondaryModeWarning dsmw;
+      send(sock_, curr_vel_.data(), SIZE_OF_MSG, 0);
+      recv(sock_, &tuple_msg_, SIZE_OF_MSG_RECV, 0);
+      if (tuple_msg_.get<0>() == 0)
+        user_grav_comp_->setGainZero();
+      else if (tuple_msg_.get<0>() == 1)
+        user_grav_comp_->incrementGain();
+      else if (tuple_msg_.get<0>() == 2)
+        user_grav_comp_->decrementGain();
+    }
+    outputValue->setData(&tuple_msg_);
   }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NetworkHaptics);
 };
 
-#endif  // PROFICIO_DEMOS_CUBE_SPHERE_CUBE_SPHERE_H_
+#endif 

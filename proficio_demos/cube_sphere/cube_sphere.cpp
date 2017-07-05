@@ -47,26 +47,25 @@
  *  NOTICE: This program is for demonstration purposes only.
  *  It is not approved for clinical use.
  */
- 
- /* TODOs
-  * Create a callback for a function in this file that has access to the position of the target
-  * inputs are the position of the target and the position of the wam
-  */ 
+
 
 #include "cube_sphere.h"  // NOLINT (build/include_subdir)
-#include "haptic_line.h" // NOlINT (build/include_subdir)
 #include "normalize.h" // NOlINT (build/include_subdir)
-#include "haptic_line.h" // NOlINT (build/include_subdir)
 #include "haptic_ball_proficio.h" // NOlINT (build/include_subdir)
 #include "haptic_box_proficio.h" // NOlINT (build/include_subdir)
 #include "magnitude.h" // NOlINT (build/include_subdir)
-#include "balistic_force.h" // NOlINT (build/include_subdir)
 
 #include <string>
 #include <signal.h>
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
+#include <time.h>
+
+#include <cmath>
+#include <Eigen/Core>
+#include <barrett/detail/ca_macro.h>
+#include <barrett/systems/abstract/haptic_object.h>
 
 #include <boost/bind.hpp>
 #include <boost/tuple/tuple.hpp>
@@ -90,13 +89,17 @@
 #include <proficio/standard_proficio_main.h>    // NOLINT(build/include_order)
 
 BARRETT_UNITS_FIXED_SIZE_TYPEDEFS;
-BARRETT_UNITS_TYPEDEFS(4);  // defines v_type to have length 4
+BARRETT_UNITS_TYPEDEFS(6);  // defines v_type to have length 6
 
 const char* remoteHost = NULL;
 double kpLine = 3e3;
-double kdLine = 3e1;
+double kdLine = 4e1;
 bool game_exit = false;
-barrett::systems::ExposedOutput<v_type> message;
+bool thresholdMet = false;
+int XorYorZ;
+double forceThreshold;
+double targetDistance;
+int UpOrDown;
 
 bool validate_args(int argc, char** argv) {
   switch (argc) {
@@ -115,6 +118,126 @@ bool validate_args(int argc, char** argv) {
   return true;
 }
 
+namespace barrett {
+namespace systems {
+v_type msg_tmp;
+barrett::systems::ExposedOutput<v_type> message;
+
+class BalisticForce : public HapticObject {
+	BARRETT_UNITS_FIXED_SIZE_TYPEDEFS;
+
+public:
+	BalisticForce(const cp_type& center, 
+			const std::string& sysName = "BalisticForce") :
+		HapticObject(sysName),
+		c(center),
+		depth(0.0), dir(0.0) 
+	{}
+	virtual ~BalisticForce() { mandatoryCleanUp(); }
+
+	const cp_type& getCenter() const { return c; }
+
+protected:
+	virtual void operate() {
+		pos = input.getValue();
+		for (int i=0;i<3;i++){
+			dir[i] = 0.0;
+		}
+		if (!thresholdMet){
+			cforce = c - pos;
+			if ((barrett::math::sign(forceThreshold)==1 && cforce[XorYorZ] >= forceThreshold) || (barrett::math::sign(forceThreshold)==-1 && cforce[XorYorZ] <= forceThreshold)){
+				thresholdMet = true;
+			}
+			
+			depth = cforce.norm();
+			dir[XorYorZ] = cforce[XorYorZ]; // / depth;
+		}else{
+			depth = 0.0;
+		}
+		for (int i=0;i<3;i++){
+			msg_tmp[i] = pos[i];
+		}
+		for (int i=3;i<6;i++){
+			msg_tmp[i]=0;
+		}
+		msg_tmp[XorYorZ+3] = UpOrDown * targetDistance;
+		
+		message.setValue(msg_tmp);
+		
+		depthOutputValue->setData(&depth);
+		directionOutputValue->setData(&dir);
+	}
+
+	cp_type c;
+	cp_type pos;
+
+	// state & temporaries
+	cf_type cforce;
+
+	double depth;
+	cf_type dir;
+	
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(BalisticForce);
+
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+
+
+}
+}
+
+namespace barrett {
+namespace systems {
+
+
+class HapticLine : public HapticObject {
+	BARRETT_UNITS_FIXED_SIZE_TYPEDEFS;
+
+public:
+	HapticLine(const cp_type& center, 
+			const std::string& sysName = "HapticLine") :
+		HapticObject(sysName),
+		c(center),
+		depth(0.0), dir(0.0)
+	{}
+	virtual ~HapticLine() { mandatoryCleanUp(); }
+
+	const cp_type& getCenter() const { return c; }
+
+protected:
+	virtual void operate() {
+		pos = c - input.getValue();
+		pos[XorYorZ] = 0;
+		
+		depth = pos.norm();
+		dir = pos;
+		depthOutputValue->setData(&depth);
+		directionOutputValue->setData(&dir);
+	}
+
+	cp_type c;
+
+	// state & temporaries
+	cf_type pos;
+
+	double depth;
+	cf_type dir;
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(HapticLine);
+
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+
+
+}
+}
+
+
 
 namespace cube_sphere {
 /** When killed from outside (by GUI), this allows a graceful exit. */
@@ -124,17 +247,8 @@ void exit_program_callback(int signum) { game_exit = true; }
 cf_type scale(boost::tuple<cf_type, double> t) {
   return t.get<0>() * t.get<1>();
 }
-/*
-barrett::systems::ExposedOutput<v_type> append(cf_type axes) {
-	v_type msg_tmp;
-	for (int i = 0; i < 3; i++){
-		msg_tmp[i] = axes[i];
-	}
-	msg_tmp[3] = 0.0; // needs to be randomly generated and used as an index in the cpp file
-	message.setValue(msg_tmp);
-	return message;
-}
-*/
+
+
 template <size_t DOF>
 int proficio_main(int argc, char** argv,
                   barrett::ProductManager& product_manager,  // NOLINT
@@ -143,6 +257,7 @@ int proficio_main(int argc, char** argv,
   
   BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
   wam.gravityCompensate();
+  std::srand(time(NULL)); //initialize the random seed
   barrett::SafetyModule* safety_module = product_manager.getSafetyModule();
   barrett::SafetyModule::PendantState ps;
   safety_module->getPendantState(&ps);
@@ -152,68 +267,54 @@ int proficio_main(int argc, char** argv,
   } else if (side == RIGHT) {
     filename = filename + "RightConfig.txt";
   }
+  std::ifstream ifile("input.txt", std::ios::in);
+  std::vector<double> scores;
   
-  // 
-  // it is seperated by newlines
-  // first is direction where the target is which is a number from 1-6
-  // 
-  /*
-   * reads from file which is generated by dragonfly for communication
-   * file is seperated by \n
-   * 
-   * first is the direction where the target is (a number from 1-6)
-   * 1 is +z direction
-   * 2 is -z direction
-   * 3 is +y direction
-   * 4 is -y direction
-   * 5 is +x direction
-   * 6 is -x direction
-   * 
-   * second line has 4 threshholds (10, 20, 30, 40)
-   * 
-   * thrid line has one of four targets 
-   * 
-   * 5 cm
-   * 10 cm
-   * 15 cm
-   * 20 cm
-  */
-  std::ifstream myReadFile;
-  myReadFile.open("input.txt");
-  //int output;
-  //int lineNumber = 0;
-  
-  int XorYorZ=2;
-  int UpOrDown = 1; // 1 if up -1 if down
-  double forceThreshold=0.01;
-  double targetDistance = 0.10;
-  /*
-  if (myReadFile.is_open()) {
-	for (int i=0;i<10;i++) {
-		myReadFile >> output;
-		std::cout << output << std::endl;
-		switch (lineNumber){
-			case 0:
-				XorYorZ = output;
-				break;
-			case 1:
-				UpOrDown = output;
-				break;
-			case 2:
-				forceThreshold = output;
-				break;
-			case 3:
-				targetDistance = output;
-				break;
-			default:
-				printf("error: inside default in reading file");
-				break; 
-		}
-		lineNumber++;
-	}
+  //check to see that the file was opened correctly:
+  if (!ifile.is_open()) {
+      std::cerr << "There was a problem opening the input file!\n";
+      exit(1);//exit or do additional error checking
   }
-  myReadFile.close();
-  */
+    
+  double num = 0.0;
+  int lineNumber = 0;
+  //keep storing values from the text file so long as data exists:
+  while (ifile >> num) {
+	switch (lineNumber){
+	case 0:
+		XorYorZ = num;
+		break;
+	case 1:
+		UpOrDown = num;
+		break;
+	case 2:
+		forceThreshold = num;
+		break;
+	case 3:
+		targetDistance = num;
+		break;
+	default:
+		printf("error: inside default in reading file");
+		break;
+	}
+	lineNumber++;
+	scores.push_back(num);
+  }
+  forceThreshold *= UpOrDown;
+  std::string labels [4] = {"XorYorZ (0 -> x, 1 -> y, 2 -> z):                                 ",
+							"UpOrDown (-1 -> negative direction, 1 -> positive direction):     ",
+							"forceThreshold:                                                   ",
+							"targetDistance:                                                   "};
+  
+
+  std::cout << "                          ** Trial 1 **                           "  << std::endl << "___________________________________________________________________"  << std::endl << std::endl;
+  //verify that the scores were stored correctly:
+  for (int i = 0; i < scores.size(); ++i) {
+      std::cout << labels[i] << scores[i] << std::endl;
+  }
+  int UpOrDownMod = UpOrDown;
+  if (XorYorZ == 2){ UpOrDown *= -1;}
+
   // Catch kill signals if possible for a graceful exit.
   signal(SIGINT, cube_sphere::exit_program_callback);
   signal(SIGTERM, cube_sphere::exit_program_callback);
@@ -227,17 +328,6 @@ int proficio_main(int argc, char** argv,
   NetworkHaptics<DOF> network_haptics(product_manager.getExecutionManager(),
                                       remoteHost, &gravity_comp);
   
-  std::vector<cp_type> path;
-  double start_point[] = {0.4, -0.15, 0.12};
-  double end_point[] = {0.4, -0.15, -0.12};
-  for (double t = 0.0; t <=1.0; t += 0.05){
-	  double path_x = (1 - t) * start_point[0] + t * end_point[0];
-	  double path_y = (1 - t) * start_point[1] + t * end_point[1];
-	  double path_z = (1 - t) * start_point[2] + t * end_point[2];
-	  cp_type path_point(path_x, path_y, path_z);
-	  path.push_back(path_point);
-  }
-  
   //const cp_type transformVector(0.85, -0.27, -0.2);
   const cp_type ball_center(0.4, -0.15, 0.05);
   const cp_type system_center(0.450, -0.120, 0.250);
@@ -250,8 +340,8 @@ int proficio_main(int argc, char** argv,
 
   //const double forceThreshold = 0.05;
   //barrett::systems::HapticBoxProficio ball(ball_center, box_size);
-  barrett::systems::BalisticForce ball(ball_center, XorYorZ, forceThreshold * UpOrDown);
-  barrett::systems::HapticLine line(ball_center, XorYorZ);
+  barrett::systems::BalisticForce ball(ball_center);
+  barrett::systems::HapticLine line(ball_center);
   
   barrett::systems::Summer<cf_type> direction_sum;
   barrett::systems::Summer<double> depth_sum;
@@ -311,7 +401,7 @@ int proficio_main(int argc, char** argv,
   barrett::systems::connect(joint_vel_filter.output, velsat.input);
 
   barrett::systems::connect(wam.toolPosition.output, mod_axes.input);
-  barrett::systems::connect(mod_axes.output, network_haptics.input);
+  barrett::systems::forceConnect(barrett::systems::message.output, network_haptics.input);
   barrett::systems::connect(mod_axes.output, ball.input);
   barrett::systems::connect(mod_axes.output, line.input);
 
@@ -340,7 +430,8 @@ int proficio_main(int argc, char** argv,
   product_manager.getSafetyModule()->setTorqueLimit(3.0);
   wam.idle();
   barrett::systems::connect(joint_torque_saturation.output, wam.input);
-  int counter = 0; 
+  int counter = 0;
+  int trialNumber = 2;
   int timer = 0;
   cp_type cp;
   cp_type target_center;
@@ -350,17 +441,45 @@ int proficio_main(int argc, char** argv,
   double target_error = 0.03;
   while (true) {  // Allow the user to stop and resume with pendant buttons
 	cp = barrett::math::saturate(wam.getToolPosition(), 9.999);
+	/*
     if ( counter % 100 == 0 ) {
 		printf("[%6.3f, %6.3f, %6.3f]\n", cp[0], cp[1], cp[2]);
 	}
 	counter++;
+	*/
 	double target_pos = UpOrDown*targetDistance + system_center[XorYorZ];
 	if (target_pos - target_error < cp[XorYorZ] && cp[XorYorZ] < target_pos + target_error){
 		if (timer > 10){
+			scores.clear();
 			wam.moveTo(system_center);
-			// TODO: after the wam moves back to the center hand over a different set of instructions to the python visualization
-			// this will allow a graceful transition between trials
-			// (this may not be necessary if the system provides a text file for each trial)
+			thresholdMet = false;
+			double targetPositions [4] = {0.05, 0.10, 0.15, 0.20};
+			double forceThresholds [4] = {0.01, 0.02}; //, 0.03, 0.04};
+			int directions [3] = {0,1,2};
+			int UpOrDownDirs [2] = {-1,1};
+			
+			UpOrDownMod = UpOrDownDirs[std::rand() % 2];
+			
+			XorYorZ = directions[std::rand() % 3];
+			
+			forceThreshold = forceThresholds[std::rand() % 2];
+			forceThreshold *= UpOrDown;
+			targetDistance = targetPositions[std::rand() % 4];
+			std::cout << "                          ** Trial " << trialNumber << " **                           "  << std::endl << "___________________________________________________________________"  << std::endl << std::endl;
+			trialNumber++;
+			
+			
+			if (XorYorZ == 2){ UpOrDown *= -1;}
+			std::cout << "UpOrDownMod: " << UpOrDownMod << std::endl;
+			//std::cout << targetDistance << " " << XorYorZ << std::endl;
+			scores.push_back(XorYorZ);
+			scores.push_back(UpOrDown);
+			scores.push_back(forceThreshold);
+			scores.push_back(targetDistance);
+			
+			for (int i = 0; i < scores.size(); ++i) {
+				std::cout << labels[i] << scores[i] << std::endl;
+			}
 			wam.idle();
 			timer = 0;
 		}
